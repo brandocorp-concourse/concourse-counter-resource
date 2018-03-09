@@ -1,0 +1,41 @@
+#!/bin/bash
+
+set -e
+
+exec 3>&1 # move stdout to 3 for returning our output
+exec 1>&2 # redirect normal output to stderr for logging
+
+main(){
+  # Create a temp file to store input passed on STDIN 
+  input=$(mktemp /tmp/counter-in.XXXXXXXX)
+  cat > $input <&0
+  
+  # Use jq to parse out our variables
+  start=$(jq -r '.source.start' < $input)
+  stop=$(jq -r '.source.stop' < $input)
+  count=$(jq -r '.version.count // "null"' < $input)
+  
+  # Ensure stop comes after start
+  if [ $start -gt $stop ]; then
+    echo "Error: $start must come before $stop." >&2 
+    exit 1
+  fi
+  
+  # If no count was set (initial check) then use the value of $start
+  if [[ "$count" == "null" ]]; then
+    count=$start
+  fi
+
+  # Ensure we are within the defined bounds of the count
+  if [ $start -le $count ] && [ $count -le $stop]; then
+    count=$(( $count + 1 ))
+  elif [ $count -gt $stop ]; then
+    count=$start
+  fi
+  
+  # Send our new value for count back as our resource check output
+  jq -M -n "[{count: $(echo $count | jq -R .)}]" >&3
+  
+}
+
+main
